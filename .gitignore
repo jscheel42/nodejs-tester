@@ -1,0 +1,38 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.production
+
+# Kubernetes secrets
+k8s/secret.yaml
+
+# Node modules
+node_modules/
+npm-debug.log*
+
+# Build output
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+temp/

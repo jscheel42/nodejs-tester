@@ -1,0 +1,46 @@
+{
+  "name": "nodejs-tester",
+  "version": "1.0.0",
+  "description": "Sample application for testing Sentry integration with intentionally inefficient queries",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch src/server/index.ts",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "tsc -p tsconfig.node.json",
+    "start": "node dist/server/index.js",
+    "seed": "tsx src/server/seed.ts",
+    "seed:medium": "SEED_SIZE=medium tsx src/server/seed.ts",
+    "seed:large": "SEED_SIZE=large tsx src/server/seed.ts",
+    "db:sync": "tsx -e \"import './src/server/db.js'; import { sequelize } from './src/server/models/index.js'; await sequelize.sync({ force: true }); console.log('Database synced'); process.exit(0);\""
+  },
+  "dependencies": {
+    "@sentry/node": "^8.0.0",
+    "@sentry/profiling-node": "^8.0.0",
+    "@sentry/react": "^8.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "pg": "^8.13.0",
+    "pg-hstore": "^2.3.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "sequelize": "^6.37.5"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.2.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
