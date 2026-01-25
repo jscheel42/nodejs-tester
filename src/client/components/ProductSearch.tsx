@@ -101,7 +101,7 @@ export default function ProductSearch() {
       setTiming(elapsed);
       setProducts(data.data as Product[]);
       setTotal(data.total);
-      setWarning(data.warning || null);
+      setWarning((data as { warning?: string }).warning || null);
 
       addBreadcrumb('search', `Searched products: "${searchQuery}"`, {
         query: searchQuery,
@@ -124,6 +124,14 @@ export default function ProductSearch() {
     fetchProducts();
   };
 
+  const formatPrice = (price: number | string) => {
+    const value = typeof price === 'number' ? price : Number(price);
+    if (Number.isNaN(value)) {
+      return '-';
+    }
+    return value.toFixed(2);
+  };
+
   const loadReport = async (optimized: boolean) => {
     try {
       setLoading(true);
@@ -137,7 +145,7 @@ export default function ProductSearch() {
       const elapsed = performance.now() - start;
 
       setTiming(elapsed);
-      setWarning(data.warning || null);
+      setWarning((data as { warning?: string }).warning || null);
 
       addBreadcrumb('report', `Generated ${optimized ? 'optimized' : 'slow'} product report`, {
         timing: elapsed,
@@ -258,7 +266,7 @@ export default function ProductSearch() {
                       )}
                     </td>
                     <td>{product.category?.name || '-'}</td>
-                    <td>${product.price.toFixed(2)}</td>
+                    <td>${formatPrice(product.price)}</td>
                     <td>
                       <span style={{ color: product.stock < 10 ? '#ef4444' : product.stock < 50 ? '#f59e0b' : '#10b981' }}>
                         {product.stock}

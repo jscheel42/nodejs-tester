@@ -6,6 +6,8 @@ import { SEED_CONFIGS, SeedSize } from '../shared/types.js';
 // Get seed size from environment
 const seedSize = (process.env.SEED_SIZE as SeedSize) || 'small';
 const config = SEED_CONFIGS[seedSize];
+const shouldReset = !['false', '0'].includes((process.env.SEED_RESET || '').toLowerCase());
+const seedRunId = process.env.SEED_RUN_ID || Date.now().toString();
 
 console.log(`[Seed] Starting database seeding with size: ${seedSize}`);
 console.log(`[Seed] Config:`, config);
@@ -16,8 +18,8 @@ async function seed() {
     initModels();
 
     // Sync database (drop and recreate tables)
-    console.log('[Seed] Syncing database...');
-    await sequelize.sync({ force: true });
+    console.log(`[Seed] Syncing database (reset=${shouldReset})...`);
+    await sequelize.sync({ force: shouldReset });
     console.log('[Seed] Database synced');
 
     // Seed Categories
@@ -61,17 +63,13 @@ async function seed() {
 }
 
 async function seedCategories(count: number): Promise<Category[]> {
-  const categoryNames = new Set<string>();
-  
-  // Generate unique category names
-  while (categoryNames.size < count) {
-    categoryNames.add(faker.commerce.department());
-  }
-
-  const categories = Array.from(categoryNames).map(name => ({
-    name,
-    description: faker.commerce.productDescription(),
-  }));
+  const categories = Array.from({ length: count }, (_value, index) => {
+    const name = faker.commerce.department();
+    return {
+      name: `${name} ${seedRunId}-${index + 1}`,
+      description: faker.commerce.productDescription(),
+    };
+  });
 
   return Category.bulkCreate(categories);
 }
@@ -108,22 +106,16 @@ async function seedProducts(count: number, categories: Category[]): Promise<Prod
 async function seedUsers(count: number): Promise<User[]> {
   const batchSize = 1000;
   const users: User[] = [];
-  const usedEmails = new Set<string>();
   
   for (let i = 0; i < count; i += batchSize) {
     const batch = [];
     const currentBatchSize = Math.min(batchSize, count - i);
     
     for (let j = 0; j < currentBatchSize; j++) {
-      let email: string;
-      // Ensure unique emails
-      do {
-        email = faker.internet.email().toLowerCase();
-      } while (usedEmails.has(email));
-      usedEmails.add(email);
-      
+      const uniqueEmail = `user-${seedRunId}-${i + j + 1}@example.com`;
+
       batch.push({
-        email,
+        email: uniqueEmail,
         name: faker.person.fullName(),
       });
     }
@@ -154,59 +146,60 @@ async function seedOrders(
   startDate.setFullYear(startDate.getFullYear() - 2);
   
   for (let i = 0; i < count; i += batchSize) {
-    const orderBatch = [];
+    const orderBatch: Array<{
+      userId: number;
+      status: typeof statuses[number];
+      totalAmount: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = [];
+    const itemBatch: Array<{
+      orderIndex: number;
+      productId: number;
+      quantity: number;
+      price: number;
+    }> = [];
     const currentBatchSize = Math.min(batchSize, count - i);
     
     for (let j = 0; j < currentBatchSize; j++) {
       const orderDate = faker.date.between({ from: startDate, to: endDate });
-      
-      orderBatch.push({
-        userId: faker.helpers.arrayElement(users).id,
-        status: faker.helpers.arrayElement(statuses),
-        totalAmount: 0, // Will be calculated from items
-        createdAt: orderDate,
-        updatedAt: orderDate,
-      });
-    }
-    
-    const orders = await Order.bulkCreate(orderBatch);
-    
-    // Create order items for each order
-    const itemBatch = [];
-    for (const order of orders) {
       const numItems = faker.number.int(itemsPerOrder);
       const selectedProducts = faker.helpers.arrayElements(products, numItems);
       let orderTotal = 0;
-      
+
       for (const product of selectedProducts) {
         const quantity = faker.number.int({ min: 1, max: 5 });
         const price = parseFloat(product.price.toString());
         orderTotal += price * quantity;
-        
+
         itemBatch.push({
-          orderId: order.id,
+          orderIndex: j,
           productId: product.id,
           quantity,
           price,
         });
       }
-      
-      // Update order total
-      order.totalAmount = orderTotal;
+
+      orderBatch.push({
+        userId: faker.helpers.arrayElement(users).id,
+        status: faker.helpers.arrayElement(statuses),
+        totalAmount: orderTotal,
+        createdAt: orderDate,
+        updatedAt: orderDate,
+      });
     }
-    
-    // Bulk create order items
+
+    const orders = await Order.bulkCreate(orderBatch, { returning: true });
+
     if (itemBatch.length > 0) {
-      await OrderItem.bulkCreate(itemBatch);
+      const itemsWithIds = itemBatch.map(item => ({
+        orderId: orders[item.orderIndex].id,
+        productId: item.productId,
+        quantity: item.quantity,
+        price: item.price,
+      }));
+      await OrderItem.bulkCreate(itemsWithIds);
     }
-    
-    // Update order totals
-    await Promise.all(orders.map(order => 
-      Order.update(
-        { totalAmount: order.totalAmount },
-        { where: { id: order.id } }
-      )
-    ));
     
     if ((i + batchSize) % 5000 === 0 || i + batchSize >= count) {
       console.log(`[Seed] Orders: ${Math.min(i + batchSize, count)}/${count}`);

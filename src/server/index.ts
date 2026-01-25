@@ -1,11 +1,11 @@
 import 'dotenv/config';
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as Sentry from '@sentry/node';
+import { Sentry, addBreadcrumb, isSentryEnabled } from './sentry.js';
 
-import { initSentry } from './sentry.js';
 import { initDatabase } from './db.js';
 import { createRoutes } from './routes/index.js';
 
@@ -15,12 +15,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Initialize Sentry FIRST (before any other middleware)
-initSentry();
-
-// Sentry request handler - must be first middleware
-Sentry.setupExpressErrorHandler(app);
-
 // Basic middleware
 app.use(cors());
 app.use(express.json());
@@ -28,15 +22,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware with Sentry breadcrumbs
 app.use((req, _res, next) => {
-  Sentry.addBreadcrumb({
-    category: 'http',
-    message: `${req.method} ${req.path}`,
-    level: 'info',
-    data: {
-      method: req.method,
-      url: req.url,
-      query: req.query,
-    },
+  addBreadcrumb('http', `${req.method} ${req.path}`, {
+    method: req.method,
+    url: req.url,
+    query: req.query,
   });
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
@@ -50,13 +39,18 @@ app.get('/health', (_req, res) => {
 // API routes
 app.use('/api', createRoutes());
 
+// Sentry error handler must be registered before any other error middleware
+if (isSentryEnabled()) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
   const clientPath = path.join(__dirname, '../client');
   app.use(express.static(clientPath));
   
   // SPA fallback
-  app.get('*', (_req, res) => {
+  app.get(/.*/, (_req, res) => {
     res.sendFile(path.join(clientPath, 'index.html'));
   });
 }
@@ -71,7 +65,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   console.error('[Error]', err);
   
   // Get the Sentry event ID for correlation
-  const eventId = Sentry.lastEventId();
+  const eventId = isSentryEnabled() ? Sentry.lastEventId() : undefined;
   
   res.status(500).json({
     error: 'Internal Server Error',
@@ -92,11 +86,15 @@ async function start() {
       console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
       
       // Log a Sentry message to verify it's working
-      Sentry.captureMessage('Server started successfully', 'info');
+      if (isSentryEnabled()) {
+        Sentry.captureMessage('Server started successfully', 'info');
+      }
     });
   } catch (error) {
     console.error('[Server] Failed to start:', error);
-    Sentry.captureException(error);
+    if (isSentryEnabled()) {
+      Sentry.captureException(error);
+    }
     process.exit(1);
   }
 }
@@ -104,13 +102,17 @@ async function start() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('[Server] SIGTERM received, shutting down gracefully');
-  await Sentry.close(2000);
+  if (isSentryEnabled()) {
+    await Sentry.close(2000);
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('[Server] SIGINT received, shutting down gracefully');
-  await Sentry.close(2000);
+  if (isSentryEnabled()) {
+    await Sentry.close(2000);
+  }
   process.exit(0);
 });
 

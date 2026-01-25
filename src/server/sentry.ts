@@ -5,6 +5,7 @@ import { nodeProfilingIntegration } from '@sentry/profiling-node';
 const SENTRY_DSN = process.env.SENTRY_DSN || 'https://placeholder@sentry.example.com/0';
 const SENTRY_ENVIRONMENT = process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development';
 const SENTRY_RELEASE = process.env.SENTRY_RELEASE || 'nodejs-tester@1.0.0';
+const SENTRY_ENABLED = ['true', '1', 'yes'].includes((process.env.SENTRY_ENABLED || '').toLowerCase());
 
 // Kubernetes context from Downward API
 const POD_NAME = process.env.POD_NAME || 'local';
@@ -12,6 +13,10 @@ const POD_NAMESPACE = process.env.POD_NAMESPACE || 'default';
 const NODE_NAME = process.env.NODE_NAME || 'local';
 
 export function initSentry() {
+  if (!SENTRY_ENABLED) {
+    console.log('[Sentry] Disabled');
+    return;
+  }
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: SENTRY_ENVIRONMENT,
@@ -75,8 +80,15 @@ export function initSentry() {
   console.log(`[Sentry] K8s Context: ${POD_NAMESPACE}/${POD_NAME} on ${NODE_NAME}`);
 }
 
+export function isSentryEnabled() {
+  return SENTRY_ENABLED;
+}
+
 // Helper to set user context (call after authentication)
 export function setSentryUser(user: { id: number; email: string; name: string }) {
+  if (!SENTRY_ENABLED) {
+    return;
+  }
   Sentry.setUser({
     id: String(user.id),
     email: user.email,
@@ -86,6 +98,9 @@ export function setSentryUser(user: { id: number; email: string; name: string })
 
 // Helper to clear user context (call on logout)
 export function clearSentryUser() {
+  if (!SENTRY_ENABLED) {
+    return;
+  }
   Sentry.setUser(null);
 }
 
@@ -96,6 +111,9 @@ export function addBreadcrumb(
   data?: Record<string, unknown>,
   level: Sentry.SeverityLevel = 'info'
 ) {
+  if (!SENTRY_ENABLED) {
+    return;
+  }
   Sentry.addBreadcrumb({
     category,
     message,
@@ -112,6 +130,9 @@ export async function withSpan<T>(
   fn: () => Promise<T>,
   data?: Record<string, unknown>
 ): Promise<T> {
+  if (!SENTRY_ENABLED) {
+    return fn();
+  }
   return Sentry.startSpan(
     {
       name,

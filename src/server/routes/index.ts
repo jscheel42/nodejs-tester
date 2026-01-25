@@ -12,6 +12,15 @@ export function createRoutes(): Router {
   router.use('/products', productsRouter);
   router.use('/debug', debugRouter);
 
+  router.get('/config', (_req, res) => {
+    res.json({
+      sentryEnabled: ['true', '1', 'yes'].includes((process.env.SENTRY_ENABLED || '').toLowerCase()),
+      sentryDsn: process.env.VITE_SENTRY_DSN || '',
+      sentryEnvironment: process.env.SENTRY_ENVIRONMENT || 'development',
+      sentryRelease: process.env.SENTRY_RELEASE || 'nodejs-tester@1.0.0',
+    });
+  });
+
   // API info endpoint
   router.get('/', (_req, res) => {
     res.json({

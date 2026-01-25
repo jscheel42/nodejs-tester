@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import * as Sentry from '@sentry/node';
-import { addBreadcrumb, withSpan, setSentryUser } from '../sentry.js';
+import { Sentry, addBreadcrumb, withSpan, setSentryUser, isSentryEnabled } from '../sentry.js';
 
 const router = Router();
 
@@ -32,18 +31,20 @@ router.post('/error', async (req, res, _next) => {
     }
   } catch (error) {
     // Capture with additional context
-    Sentry.captureException(error, {
-      tags: {
-        'debug.triggered': 'true',
-        'error.type': type,
-      },
-      extra: {
-        requestBody: req.body,
-        timestamp: new Date().toISOString(),
-      },
-    });
+    if (isSentryEnabled()) {
+      Sentry.captureException(error, {
+        tags: {
+          'debug.triggered': 'true',
+          'error.type': type,
+        },
+        extra: {
+          requestBody: req.body,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
 
-    const eventId = Sentry.lastEventId();
+    const eventId = isSentryEnabled() ? Sentry.lastEventId() : undefined;
     
     res.status(500).json({
       error: type,
@@ -193,9 +194,11 @@ router.post('/message', async (req, res) => {
   
   addBreadcrumb('debug', 'Sending custom message', { message, level });
 
-  Sentry.captureMessage(message, level as Sentry.SeverityLevel);
+  if (isSentryEnabled()) {
+    Sentry.captureMessage(message, level as Sentry.SeverityLevel);
+  }
 
-  const eventId = Sentry.lastEventId();
+  const eventId = isSentryEnabled() ? Sentry.lastEventId() : undefined;
 
   res.json({
     message,
@@ -224,11 +227,13 @@ router.post('/breadcrumbs', async (req, res) => {
   }
 
   // Now trigger an error to see the breadcrumbs
-  Sentry.captureMessage(`Test message with ${count} breadcrumbs`, 'info');
+  if (isSentryEnabled()) {
+    Sentry.captureMessage(`Test message with ${count} breadcrumbs`, 'info');
+  }
 
   res.json({
     breadcrumbsCreated: count,
-    sentryEventId: Sentry.lastEventId(),
+    sentryEventId: isSentryEnabled() ? Sentry.lastEventId() : undefined,
     info: 'Check Sentry to see breadcrumb trail',
   });
 });
@@ -242,11 +247,13 @@ router.post('/user-context', async (req, res) => {
 
   setSentryUser({ id, email, name });
 
-  Sentry.captureMessage('Test message with user context', 'info');
+  if (isSentryEnabled()) {
+    Sentry.captureMessage('Test message with user context', 'info');
+  }
 
   res.json({
     user: { id, email, name },
-    sentryEventId: Sentry.lastEventId(),
+    sentryEventId: isSentryEnabled() ? Sentry.lastEventId() : undefined,
     info: 'User context set and test message sent',
   });
 });
@@ -257,44 +264,60 @@ router.post('/user-context', async (req, res) => {
  */
 router.get('/transaction', async (_req, res, next) => {
   try {
-    const result = await Sentry.startSpan(
-      {
-        name: 'custom-transaction',
-        op: 'test',
-        attributes: {
-          'custom.attribute': 'value',
-        },
-      },
-      async () => {
-        const steps: string[] = [];
+    const runSteps = async () => {
+      const steps: string[] = [];
 
-        // Step 1: Initialize
-        await Sentry.startSpan({ name: 'initialize', op: 'function' }, async () => {
-          await new Promise(resolve => setTimeout(resolve, 50));
-          steps.push('initialized');
-        });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      steps.push('initialized');
 
-        // Step 2: Fetch data
-        await Sentry.startSpan({ name: 'fetch-data', op: 'db.query' }, async () => {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          steps.push('data fetched');
-        });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      steps.push('data fetched');
 
-        // Step 3: Process
-        await Sentry.startSpan({ name: 'process-data', op: 'function' }, async () => {
-          await new Promise(resolve => setTimeout(resolve, 75));
-          steps.push('processed');
-        });
+      await new Promise(resolve => setTimeout(resolve, 75));
+      steps.push('processed');
 
-        // Step 4: Cleanup
-        await Sentry.startSpan({ name: 'cleanup', op: 'function' }, async () => {
-          await new Promise(resolve => setTimeout(resolve, 25));
-          steps.push('cleaned up');
-        });
+      await new Promise(resolve => setTimeout(resolve, 25));
+      steps.push('cleaned up');
 
-        return { steps };
-      }
-    );
+      return { steps };
+    };
+
+    const result = isSentryEnabled()
+      ? await Sentry.startSpan(
+          {
+            name: 'custom-transaction',
+            op: 'test',
+            attributes: {
+              'custom.attribute': 'value',
+            },
+          },
+          async () => {
+            const steps: string[] = [];
+
+            await Sentry.startSpan({ name: 'initialize', op: 'function' }, async () => {
+              await new Promise(resolve => setTimeout(resolve, 50));
+              steps.push('initialized');
+            });
+
+            await Sentry.startSpan({ name: 'fetch-data', op: 'db.query' }, async () => {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              steps.push('data fetched');
+            });
+
+            await Sentry.startSpan({ name: 'process-data', op: 'function' }, async () => {
+              await new Promise(resolve => setTimeout(resolve, 75));
+              steps.push('processed');
+            });
+
+            await Sentry.startSpan({ name: 'cleanup', op: 'function' }, async () => {
+              await new Promise(resolve => setTimeout(resolve, 25));
+              steps.push('cleaned up');
+            });
+
+            return { steps };
+          }
+        )
+      : await runSteps();
 
     res.json({
       ...result,
@@ -310,7 +333,7 @@ router.get('/transaction', async (_req, res, next) => {
  * Health check with Sentry status
  */
 router.get('/health', (_req, res) => {
-  const client = Sentry.getClient();
+  const client = isSentryEnabled() ? Sentry.getClient() : null;
   
   res.json({
     status: 'ok',

@@ -1,3 +1,8 @@
+# AGENTS
+
+## Update npm packages
+- npx npm-check-updates -u
+
 # Session Summary: nodejs-tester Sentry Integration Application
 
 ## Overview

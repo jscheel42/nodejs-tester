@@ -14,12 +14,12 @@
     "noFallthroughCasesInSwitch": true,
     "declaration": true,
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "./src",
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/server", "src/shared", "vite.config.ts"],
+  "include": ["src/server", "src/shared"],
   "exclude": ["src/client"]
 }

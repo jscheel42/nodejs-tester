@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import * as Sentry from '@sentry/node';
+import { addBreadcrumb } from '../sentry.js';
 
 // Database URL from environment
 const databaseUrl = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/tester';
@@ -9,14 +9,9 @@ export const sequelize = new Sequelize(databaseUrl, {
   dialect: 'postgres',
   logging: (sql, timing) => {
     // Add breadcrumb for every SQL query (useful for debugging)
-    Sentry.addBreadcrumb({
-      category: 'database',
-      message: sql,
-      level: 'debug',
-      data: {
-        timing: typeof timing === 'number' ? timing : undefined,
-      },
-    });
+    addBreadcrumb('database', sql, {
+      timing: typeof timing === 'number' ? timing : undefined,
+    }, 'debug');
     
     // Also log to console in development
     if (process.env.NODE_ENV !== 'production') {

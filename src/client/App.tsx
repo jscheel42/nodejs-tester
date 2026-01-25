@@ -1,5 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
+import { isSentryEnabled } from './sentry';
 import Dashboard from './components/Dashboard';
 import UserList from './components/UserList';
 import OrderHistory from './components/OrderHistory';
@@ -7,10 +8,8 @@ import ProductSearch from './components/ProductSearch';
 import SlowQueryDemo from './components/SlowQueryDemo';
 import ErrorDemo from './components/ErrorDemo';
 
-// Wrap Routes with Sentry instrumentation
-const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
-
 function App() {
+  const SentryRoutes = isSentryEnabled() ? Sentry.withSentryReactRouterV6Routing(Routes) : Routes;
   return (
     <div className="app">
       <header className="app-header">

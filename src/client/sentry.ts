@@ -1,15 +1,63 @@
 import * as Sentry from '@sentry/react';
 
-// Get environment variables (Vite exposes them via import.meta.env)
-const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN || 'https://placeholder@sentry.example.com/0';
-const SENTRY_ENVIRONMENT = import.meta.env.VITE_SENTRY_ENVIRONMENT || 'development';
-const SENTRY_RELEASE = import.meta.env.VITE_SENTRY_RELEASE || 'nodejs-tester@1.0.0';
+type SentryRuntimeConfig = {
+  dsn: string;
+  environment: string;
+  release: string;
+  enabled: boolean;
+};
 
-export function initSentry() {
+const fallbackConfig: SentryRuntimeConfig = {
+  dsn: import.meta.env.VITE_SENTRY_DSN || 'https://placeholder@sentry.example.com/0',
+  environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || 'development',
+  release: import.meta.env.VITE_SENTRY_RELEASE || 'nodejs-tester@1.0.0',
+  enabled: ['true', '1', 'yes'].includes((import.meta.env.VITE_SENTRY_ENABLED || '').toLowerCase()),
+};
+
+let sentryEnabled = false;
+
+async function loadRuntimeConfig(): Promise<SentryRuntimeConfig> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch('/api/config', { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Failed to load config: ${response.status}`);
+    }
+    const data = (await response.json()) as {
+      sentryEnabled?: boolean;
+      sentryDsn?: string;
+      sentryEnvironment?: string;
+      sentryRelease?: string;
+    };
+
+    return {
+      dsn: data.sentryDsn || fallbackConfig.dsn,
+      environment: data.sentryEnvironment || fallbackConfig.environment,
+      release: data.sentryRelease || fallbackConfig.release,
+      enabled: data.sentryEnabled ?? fallbackConfig.enabled,
+    };
+  } catch (error) {
+    console.warn('[Sentry] Failed to load runtime config, using fallback', error);
+    return fallbackConfig;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+export async function initSentry() {
+  const config = await loadRuntimeConfig();
+  sentryEnabled = config.enabled;
+
+  if (!config.enabled) {
+    console.log('[Sentry] Disabled');
+    return;
+  }
   Sentry.init({
-    dsn: SENTRY_DSN,
-    environment: SENTRY_ENVIRONMENT,
-    release: SENTRY_RELEASE,
+    dsn: config.dsn,
+    environment: config.environment,
+    release: config.release,
 
     // Send PII for better debugging
     sendDefaultPii: true,
@@ -64,11 +112,18 @@ export function initSentry() {
     },
   });
 
-  console.log(`[Sentry] Frontend initialized for ${SENTRY_ENVIRONMENT}`);
+  console.log(`[Sentry] Frontend initialized for ${config.environment}`);
+}
+
+export function isSentryEnabled() {
+  return sentryEnabled;
 }
 
 // Helper to set user context
 export function setSentryUser(user: { id: string | number; email: string; name: string }) {
+  if (!sentryEnabled) {
+    return;
+  }
   Sentry.setUser({
     id: String(user.id),
     email: user.email,
@@ -78,6 +133,9 @@ export function setSentryUser(user: { id: string | number; email: string; name: 
 
 // Helper to clear user context
 export function clearSentryUser() {
+  if (!sentryEnabled) {
+    return;
+  }
   Sentry.setUser(null);
 }
 
@@ -88,6 +146,9 @@ export function addBreadcrumb(
   data?: Record<string, unknown>,
   level: Sentry.SeverityLevel = 'info'
 ) {
+  if (!sentryEnabled) {
+    return;
+  }
   Sentry.addBreadcrumb({
     category,
     message,
@@ -99,6 +160,9 @@ export function addBreadcrumb(
 
 // Helper to capture error with context
 export function captureError(error: Error, context?: Record<string, unknown>) {
+  if (!sentryEnabled) {
+    return;
+  }
   Sentry.captureException(error, {
     extra: context,
   });
@@ -106,6 +170,9 @@ export function captureError(error: Error, context?: Record<string, unknown>) {
 
 // Helper to capture message
 export function captureMessage(message: string, level: Sentry.SeverityLevel = 'info') {
+  if (!sentryEnabled) {
+    return;
+  }
   Sentry.captureMessage(message, level);
 }
 
@@ -116,6 +183,9 @@ export function withSpan<T>(
   fn: () => T,
   data?: Record<string, unknown>
 ): T {
+  if (!sentryEnabled) {
+    return fn();
+  }
   return Sentry.startSpan(
     {
       name,

@@ -132,6 +132,14 @@ export default function OrderHistory() {
     return `badge badge-${status}`;
   };
 
+  const formatTotal = (totalAmount: number | string) => {
+    const value = typeof totalAmount === 'number' ? totalAmount : Number(totalAmount);
+    if (Number.isNaN(value)) {
+      return '-';
+    }
+    return value.toFixed(2);
+  };
+
   return (
     <div className="page">
       <div className="page-header">
@@ -252,7 +260,7 @@ export default function OrderHistory() {
                         {order.status}
                       </span>
                     </td>
-                    <td>${order.totalAmount.toFixed(2)}</td>
+                    <td>${formatTotal(order.totalAmount)}</td>
                     <td>{order.items?.length || '-'}</td>
                     <td>{new Date(order.createdAt).toLocaleDateString()}</td>
                   </tr>

@@ -16,6 +16,19 @@ interface TestResult {
   sentryEventId?: string;
 }
 
+function ErrorButton() {
+  return (
+    <button
+      onClick={() => {
+        throw new Error('This is your first error!');
+      }}
+      className="btn btn-danger btn-sm"
+    >
+      Break the world
+    </button>
+  );
+}
+
 export default function ErrorDemo() {
   const [results, setResults] = useState<TestResult[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
@@ -321,6 +334,7 @@ export default function ErrorDemo() {
             <button onClick={triggerUncaughtError} className="btn btn-warning btn-sm">
               Uncaught (Risky!)
             </button>
+            <ErrorButton />
           </div>
         </div>
 

@@ -14,7 +14,9 @@ docker tag "${IMAGE_NAME}:${TAG}" "${IMAGE_NAME}:latest"
 echo "Pushing image: ${IMAGE_NAME}:${TAG}"
 docker push "${IMAGE_NAME}:${TAG}"
 
-echo "Pushing image: ${IMAGE_NAME}:latest"
-docker push "${IMAGE_NAME}:latest"
+if [ "${TAG}" != "latest" ]; then
+  echo "Pushing image: ${IMAGE_NAME}:latest"
+  docker push "${IMAGE_NAME}:latest"
+fi
 
 echo "Done! Image ${IMAGE_NAME}:${TAG} has been pushed."
