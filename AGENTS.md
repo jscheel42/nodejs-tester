@@ -3,17 +3,17 @@
 ## Update npm packages
 - npx npm-check-updates -u
 
-# Session Summary: nodejs-tester Sentry Integration Application
+# Session Summary: nodejs-tester Performance Testing Application
 
 ## Overview
 
-This is a comprehensive Sentry testing application built with Express + React that demonstrates all major Sentry features. The app intentionally includes inefficient queries and various error scenarios to showcase Sentry's monitoring capabilities.
+This is a comprehensive performance testing application built with Express + React that demonstrates optional Sentry features. The app intentionally includes inefficient queries and various error scenarios to showcase monitoring capabilities when Sentry is enabled.
 
 ## What Was Built
 
 ### Project Architecture
 - **Single package structure** - Frontend and backend in one repository
-- **Stack**: Express 4 + Sequelize 6 + React 18 + Vite + TypeScript
+- **Stack**: Express 5 + Sequelize 6 + React 19 + Vite + TypeScript
 - **Database**: PostgreSQL 18 (via Docker or sidecar in k8s)
 - **Testing**: Faker.js for realistic test data generation
 - **Deployment**: Docker + Kubernetes with Traefik ingress
@@ -37,9 +37,11 @@ This is a comprehensive Sentry testing application built with Express + React th
 
 #### Deployment & Configuration
 - `Dockerfile` - Multi-stage build (Node 22 Alpine) with health checks
+- `build-and-push.sh` - Image build/push helper
+- `install-k8s.sh` - k8s install helper (forces rollout restart)
 - `k8s/namespace.yaml` - Kubernetes namespace definition
-- `k8s/deployment.yaml` - Pod with app + PostgreSQL 18 sidecar, Service, Ingress to `sentry-test.joshuascheel.com`
-- `k8s/secret.yaml.example` - Template for Sentry DSN secret
+- `k8s/deployment.yaml` - App + PostgreSQL 18 sidecar, hostPath volume, nodeSelector `k-1`, Recreate strategy, pg_stat_statements, Postgres Service on 5432
+- `k8s/secret.yaml.example` - Template for Sentry DSN and Postgres password
 - `.env.example` - All environment variables with documentation
 - `README.md` - Complete documentation with API reference and testing workflows
 
@@ -77,6 +79,8 @@ This is a comprehensive Sentry testing application built with Express + React th
 ### Kubernetes Integration
 - **Downward API**: Automatic tagging with pod/node information
 - **Sidecar Architecture**: PostgreSQL 18 running alongside application
+- **Persistent HostPath**: Data stored on node `k-1` with `Recreate` strategy
+- **pg_stat_statements**: Enabled via Postgres startup flags
 - **Health Checks**: Liveness and readiness probes
 
 ## Intentional Performance Issues
@@ -98,13 +102,17 @@ This is a comprehensive Sentry testing application built with Express + React th
 
 ### Required Variables
 - `DATABASE_URL` - PostgreSQL connection string
-- `SENTRY_DSN` - Backend Sentry DSN
-- `VITE_SENTRY_DSN` - Frontend Sentry DSN
+- `POSTGRES_PASSWORD` - Postgres password (k8s secret)
 
 ### Optional Variables
+- `SENTRY_ENABLED` - Toggle Sentry on/off
+- `SENTRY_DSN` - Backend Sentry DSN
+- `VITE_SENTRY_DSN` - Frontend Sentry DSN
 - `SENTRY_ENVIRONMENT` - Environment tag (development/staging/production)
 - `SENTRY_RELEASE` - Release tag for version tracking
 - `SEED_SIZE` - Database seeding size (small/medium/large)
+- `SEED_RESET` - Drop tables before seeding (default true)
+- `SEED_RUN_ID` - Seed run identifier for uniqueness
 - `K8S_*` - Kubernetes context (auto-populated via Downward API)
 
 ## Testing Scenarios
@@ -133,7 +141,7 @@ This is a comprehensive Sentry testing application built with Express + React th
 ```bash
 cd nodejs-tester
 npm install
-cp .env.example .env  # Add your Sentry DSN
+cp .env.example .env  # Add DB URL, optionally enable Sentry
 # Start PostgreSQL (Docker or local)
 npm run seed          # Seed database
 npm run dev           # Start dev servers
@@ -142,13 +150,13 @@ npm run dev           # Start dev servers
 ### Kubernetes Deployment
 ```bash
 # Build and push image
-docker build -t nodejs-tester:latest .
+./build-and-push.sh
 
 # Deploy to k8s
 kubectl apply -f k8s/namespace.yaml
-cp k8s/secret.yaml.example k8s/secret.yaml  # Add your Sentry DSN
+cp k8s/secret.yaml.example k8s/secret.yaml  # Add your DB password and optional Sentry DSNs
 kubectl apply -f k8s/secret.yaml
-kubectl apply -f k8s/deployment.yaml
+./install-k8s.sh
 
 # Seed database in pod
 kubectl exec -it -n nodejs-tester deploy/nodejs-tester -c app -- npm run seed
@@ -157,9 +165,9 @@ kubectl exec -it -n nodejs-tester deploy/nodejs-tester -c app -- npm run seed
 ## Testing Guidelines for Future Work
 
 ### When Adding New Features
-1. **Include Sentry breadcrumbs** for all user interactions
-2. **Add custom spans** for complex operations
-3. **Set appropriate user context** when relevant
+1. **If Sentry enabled, include breadcrumbs** for all user interactions
+2. **If Sentry enabled, add custom spans** for complex operations
+3. **If Sentry enabled, set user context** when relevant
 4. **Test both slow and fast implementations** for performance comparison
 5. **Trigger errors intentionally** to verify error handling
 
@@ -180,11 +188,12 @@ kubectl exec -it -n nodejs-tester deploy/nodejs-tester -c app -- npm run seed
 
 ### Architecture
 - **Single Package**: Frontend and backend in one repository for simplicity
-- **Sidecar Database**: PostgreSQL runs in same pod for testing (ephemeral storage)
+- **Sidecar Database**: PostgreSQL runs in same pod with hostPath storage pinned to node `k-1`
 - **Vite Proxy**: Frontend dev server proxies API calls to backend
 - **Sequelize ORM**: User's choice over Prisma, provides SQL visibility
 
 ### Sentry Integration
+- **Optional by default**: `SENTRY_ENABLED=false` unless explicitly enabled
 - **100% Sampling**: High sampling rates for comprehensive testing
 - **All Integrations**: Error tracking, performance, replay, feedback, profiling
 - **Rich Context**: Automatic k8s pod information and user context
@@ -201,14 +210,16 @@ kubectl exec -it -n nodejs-tester deploy/nodejs-tester -c app -- npm run seed
 ### Database Connection Issues
 - **Local Dev**: Ensure PostgreSQL is running on port 5432
 - **Kubernetes**: PostgreSQL sidecar takes time to start, app may need retry logic
+- **HostPath Storage**: Pod must remain on node `k-1` to keep data
 
 ### Sentry Not Capturing
+- **Enabled**: Set `SENTRY_ENABLED=true` and provide DSNs
 - **Check DSN**: Verify both backend and frontend DSNs are set correctly
 - **Environment**: Ensure environment variables are properly passed in k8s
 - **Sampling**: Check sampling rates (set to 1.0 for testing)
 
 ### Slow Performance in K8s
-- **Resource Limits**: Pod has 512Mi memory limit, may need increase for large datasets
+- **Resource Limits**: App now requests 768Mi and limits 1Gi memory
 - **PostgreSQL Sidecar**: Shared resources can cause performance issues
 
 ### Frontend Build Issues
@@ -239,5 +250,5 @@ The deployment target is the Lima k3s cluster with Traefik ingress at `sentry-te
 
 ---
 
-**Last Updated**: 2026-01-24  
+**Last Updated**: 2026-01-25  
 **Status**: Complete - All features implemented and tested

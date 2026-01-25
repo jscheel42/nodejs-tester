@@ -1,10 +1,10 @@
 # Node.js Sentry Testing Application
 
-A comprehensive sample application for testing Sentry integration with intentionally inefficient queries to demonstrate performance monitoring, error tracking, session replay, and more.
+A comprehensive sample application for testing database performance and optional Sentry integration, with intentionally inefficient queries to demonstrate monitoring scenarios.
 
 ## Features
 
-### Sentry Integration
+### Optional Sentry Integration
 - **Error Tracking**: Automatic error capture with custom context
 - **Performance Monitoring**: Transaction tracing with custom spans
 - **Profiling**: CPU profiling for backend operations
@@ -12,6 +12,8 @@ A comprehensive sample application for testing Sentry integration with intention
 - **User Feedback**: Integrated feedback widget
 - **Breadcrumbs**: Automatic and custom breadcrumb trails
 - **User Context**: Associate errors with specific users
+
+Sentry is disabled by default; set `SENTRY_ENABLED=true` and provide DSNs to enable it.
 
 ### Intentionally Slow Queries (for testing)
 - **N+1 Queries**: Loading users without eager loading
@@ -26,7 +28,7 @@ A comprehensive sample application for testing Sentry integration with intention
 ### Prerequisites
 - Node.js 22+
 - PostgreSQL 18 (or Docker)
-- Sentry account with DSN
+- Sentry account with DSN (optional)
 
 ### Local Development
 
@@ -39,7 +41,8 @@ A comprehensive sample application for testing Sentry integration with intention
 2. **Set up environment:**
    ```bash
    cp .env.example .env
-   # Edit .env with your Sentry DSN and database URL
+   # Edit .env with your database URL
+   # Optional: set SENTRY_ENABLED=true and add DSNs to enable Sentry
    ```
 
 3. **Start PostgreSQL** (if not running):
@@ -55,9 +58,9 @@ A comprehensive sample application for testing Sentry integration with intention
 
 4. **Seed the database:**
    ```bash
-   npm run seed          # Small: 100 users, 1k orders
-   npm run seed:medium   # Medium: 1k users, 10k orders
-   npm run seed:large    # Large: 100k users, 500k orders
+   npm run seed          # Small: 100 users, 1k orders (resets DB)
+   npm run seed:medium   # Medium: 1k users, 10k orders (appends)
+   npm run seed:large    # Large: 100k users, 500k orders (appends)
    ```
 
 5. **Start development server:**
@@ -69,24 +72,29 @@ A comprehensive sample application for testing Sentry integration with intention
 
 ### Kubernetes Deployment
 
-1. **Build the Docker image:**
+1. **Build and push the Docker image:**
    ```bash
-   docker build -t nodejs-tester:latest .
+   ./build-and-push.sh
    ```
 
 2. **Create the namespace and secret:**
    ```bash
    kubectl apply -f k8s/namespace.yaml
    
-   # Edit secret.yaml.example with your Sentry DSN, then:
+   # Edit secret.yaml.example with your DB password and optional Sentry DSNs, then:
    cp k8s/secret.yaml.example k8s/secret.yaml
    kubectl apply -f k8s/secret.yaml
    ```
 
 3. **Deploy the application:**
    ```bash
-   kubectl apply -f k8s/deployment.yaml
+   ./install-k8s.sh
    ```
+
+   Notes:
+   - The deployment uses a hostPath volume pinned to node `lima-k-2`.
+   - PostgreSQL is exposed to the cluster on `nodejs-tester.nodejs-tester.svc.cluster.local:5432`.
+   - `pg_stat_statements` is enabled via Postgres startup flags.
 
 4. **Seed the database in the pod:**
    ```bash
@@ -109,7 +117,7 @@ nodejs-tester/
 │   │   │   ├── SlowQueryDemo.tsx
 │   │   │   └── ErrorDemo.tsx
 │   │   ├── api.ts              # API client with Sentry breadcrumbs
-│   │   ├── sentry.ts           # Frontend Sentry configuration
+│   │   ├── sentry.ts           # Frontend Sentry configuration (optional)
 │   │   ├── main.tsx            # React entry point
 │   │   ├── App.tsx             # Main app component
 │   │   └── App.css             # Styles
@@ -130,7 +138,8 @@ nodejs-tester/
 │   │   │   └── index.ts
 │   │   ├── db.ts               # Database initialization
 │   │   ├── seed.ts             # Faker-based seeding
-│   │   ├── sentry.ts           # Backend Sentry configuration
+│   │   ├── sentry.ts           # Backend Sentry configuration (optional)
+│   │   ├── instrument.ts       # Sentry instrumentation entry (optional)
 │   │   └── index.ts            # Express server
 │   │
 │   └── shared/
@@ -142,6 +151,8 @@ nodejs-tester/
 │   └── secret.yaml.example
 │
 ├── Dockerfile                  # Multi-stage build
+├── build-and-push.sh           # Image build/push helper
+├── install-k8s.sh              # k8s install helper
 ├── package.json
 ├── tsconfig.json               # Frontend TS config
 ├── tsconfig.node.json          # Backend TS config
@@ -202,7 +213,7 @@ Navigate to **Slow Queries** page and click:
 - "N+1 (Slow)" vs "Paginated (Fast)" for users
 - "Cartesian (Slow)" vs "Optimized (Fast)" for product reports
 
-### 2. Test Error Tracking
+### 2. Test Error Tracking (when Sentry enabled)
 Navigate to **Error Tests** page and:
 - Trigger backend errors (Error, TypeError, ReferenceError)
 - Trigger frontend errors (caught and uncaught)
@@ -215,12 +226,12 @@ In **Error Tests** page:
 3. Trigger an error
 4. Check Sentry - error should be associated with the user
 
-### 4. View Session Replay
+### 4. View Session Replay (when Sentry enabled)
 1. Navigate around the app
 2. Trigger an error
 3. In Sentry, view the session replay to see what the user did
 
-### 5. Test Performance Monitoring
+### 5. Test Performance Monitoring (when Sentry enabled)
 1. Run slow queries from **Slow Queries** page
 2. Check Sentry Performance for transaction traces
 3. View spans to see database query timing
@@ -232,13 +243,19 @@ In **Error Tests** page:
 | `PORT` | Server port | `3000` |
 | `NODE_ENV` | Environment | `development` |
 | `DATABASE_URL` | PostgreSQL connection string | Required |
-| `SENTRY_DSN` | Sentry DSN (backend) | Required |
+| `POSTGRES_PASSWORD` | Postgres password | Required (k8s) |
+| `SENTRY_ENABLED` | Toggle Sentry on/off | `false` |
+| `SENTRY_DSN` | Sentry DSN (backend) | Optional |
 | `SENTRY_ENVIRONMENT` | Sentry environment tag | `development` |
 | `SENTRY_RELEASE` | Sentry release tag | `nodejs-tester@1.0.0` |
-| `VITE_SENTRY_DSN` | Sentry DSN (frontend) | Required |
+| `VITE_SENTRY_DSN` | Sentry DSN (frontend) | Optional |
 | `VITE_SENTRY_ENVIRONMENT` | Frontend environment | `development` |
 | `VITE_SENTRY_RELEASE` | Frontend release | `nodejs-tester@1.0.0` |
+| `VITE_SENTRY_ENABLED` | Frontend Sentry toggle (fallback) | `false` |
 | `SEED_SIZE` | Seeding size (small/medium/large) | `small` |
+| `SEED_RESET` | Drop tables before seeding | `true` |
+| `SEED_RUN_ID` | Seed run identifier for uniqueness | Timestamp |
+| `NODE_OPTIONS` | Node runtime flags | Optional |
 | `K8S_*` | Kubernetes context (Downward API) | Auto-populated |
 
 ## Scripts
