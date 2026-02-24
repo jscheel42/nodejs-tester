@@ -18,7 +18,7 @@ spec:
         app: nodejs-tester
     spec:
       nodeSelector:
-        kubernetes.io/hostname: lima-k-2
+        kubernetes.io/hostname: lima-k-1
       containers:
         # Main application container
         - name: app
@@ -78,10 +78,10 @@ spec:
           
           resources:
             requests:
-              memory: "768Mi"
+              memory: "384Mi"
               cpu: "100m"
             limits:
-              memory: "1Gi"
+              memory: "896Mi"
               cpu: "500m"
           
           livenessProbe:
@@ -129,10 +129,10 @@ spec:
           
           resources:
             requests:
-              memory: "256Mi"
+              memory: "128Mi"
               cpu: "100m"
             limits:
-              memory: "512Mi"
+              memory: "384Mi"
               cpu: "500m"
           
           # Use emptyDir for ephemeral storage (data lost on pod restart)
@@ -191,27 +191,26 @@ spec:
     app: nodejs-tester
 
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: nodejs-tester
   namespace: nodejs-tester
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
-  tls:
-    - hosts:
-        - sentry-test.joshuascheel.com
-      secretName: wildcard-joshuascheel-com
+  parentRefs:
+    - name: edge
+      namespace: kube-system
+      sectionName: web
+    - name: edge
+      namespace: kube-system
+      sectionName: websecure
+  hostnames:
+    - sentry-test.joshuascheel.com
   rules:
-    - host: sentry-test.joshuascheel.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: nodejs-tester
-                port:
-                  name: http
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: nodejs-tester
+          port: 80

@@ -92,7 +92,7 @@ Sentry is disabled by default; set `SENTRY_ENABLED=true` and provide DSNs to ena
    ```
 
    Notes:
-   - The deployment uses a hostPath volume pinned to node `lima-k-2`.
+   - The deployment uses a hostPath volume pinned to node `lima-k-1`.
    - PostgreSQL is exposed to the cluster on `nodejs-tester.nodejs-tester.svc.cluster.local:5432`.
    - `pg_stat_statements` is enabled via Postgres startup flags.
 
